@@ -1,10 +1,24 @@
 import { Link, useLocation } from "wouter";
 import { Moon, Calendar, MessageCircle, User, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { checkAndNotify } from "@/lib/notifications";
+import { useLiveQuery } from "dexie-react-hooks";
+
 const bgImage = "/assets/images/soft_fluid_gradient_background_with_coral_and_sage_tones.png";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const { user } = useAuth();
+  const logs = useLiveQuery(() => db.periodLogs.toArray());
+
+  useEffect(() => {
+    if (user && logs) {
+      checkAndNotify(user, logs);
+    }
+  }, [user, logs]);
 
   const shouldHideNav = location === "/login" || location.startsWith("/community/thread/");
 

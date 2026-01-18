@@ -1,5 +1,5 @@
-import { 
-  type User, 
+import {
+  type User,
   type InsertUser,
   type PeriodLog,
   type InsertPeriodLog,
@@ -19,19 +19,19 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   getPeriodLogs(userId: string, startDate?: Date, endDate?: Date): Promise<PeriodLog[]>;
   createPeriodLog(log: InsertPeriodLog): Promise<PeriodLog>;
   updatePeriodLog(id: string, log: Partial<InsertPeriodLog>): Promise<PeriodLog | undefined>;
   deletePeriodLog(id: string): Promise<void>;
-  
+
   getThreads(limit?: number): Promise<Array<Thread & { author: User; replyCount: number }>>;
   getThread(id: string): Promise<(Thread & { author: User }) | undefined>;
   createThread(thread: InsertThread): Promise<Thread>;
-  
+
   getComments(threadId: string): Promise<Array<Comment & { author: User }>>;
   createComment(comment: InsertComment): Promise<Comment>;
-  
+
   likeThread(threadId: string): Promise<void>;
   likeComment(commentId: string): Promise<void>;
 }
@@ -57,18 +57,18 @@ export class DatabaseStorage implements IStorage {
 
   async getPeriodLogs(userId: string, startDate?: Date, endDate?: Date): Promise<PeriodLog[]> {
     const conditions = [eq(periodLogs.userId, userId)];
-    
+
     if (startDate && endDate) {
       conditions.push(gte(periodLogs.date, startDate.toISOString().split('T')[0]));
       conditions.push(lte(periodLogs.date, endDate.toISOString().split('T')[0]));
     }
-    
+
     const logs = await db
       .select()
       .from(periodLogs)
       .where(and(...conditions))
       .orderBy(desc(periodLogs.date));
-    
+
     return logs;
   }
 
@@ -98,14 +98,14 @@ export class DatabaseStorage implements IStorage {
       .select({
         thread: threads,
         author: users,
-        replyCount: db.$count(comments, eq(comments.threadId, threads.id)),
+        replyCount: sql<number>`(SELECT count(*) FROM ${comments} WHERE ${comments.threadId} = ${threads.id})`,
       })
       .from(threads)
       .leftJoin(users, eq(threads.authorId, users.id))
       .orderBy(desc(threads.createdAt))
       .limit(limit);
 
-    return results.map(r => ({
+    return results.map((r: { thread: Thread; author: User | null; replyCount: number }) => ({
       ...r.thread,
       author: r.author!,
       replyCount: r.replyCount || 0,
@@ -149,7 +149,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(comments.threadId, threadId))
       .orderBy(comments.createdAt);
 
-    return results.map(r => ({
+    return results.map((r: { comment: Comment; author: User | null }) => ({
       ...r.comment,
       author: r.author!,
     }));

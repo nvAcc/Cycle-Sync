@@ -1,75 +1,95 @@
 import * as tf from '@tensorflow/tfjs';
+import { isEmotional, addEmpathy } from './empathy';
 
-// pre defined vocab and intents for the lightweight model
-const VOCAB = ['cramp', 'pain', 'mood', 'sad', 'happy', 'food', 'diet', 'bleeding', 'heavy', 'tired'];
-const INTENTS = ['pain_relief', 'emotional_support', 'nutrition', 'symptom_check'];
 
 export class ChatbotModel {
-    private model: tf.Sequential | null = null;
+    private model: tf.LayersModel | null = null;
+    private vocab: string[] = [];
+    private tags: string[] = [];
+    private responses: Record<string, string[]> = {};
     private isReady = false;
+    private lastResponse: string = "";
 
     async init() {
-        this.model = tf.sequential();
-        this.model.add(tf.layers.dense({ units: 8, inputShape: [VOCAB.length], activation: 'relu' }));
-        this.model.add(tf.layers.dense({ units: INTENTS.length, activation: 'softmax' }));
+        try {
+            // Load Model
+            this.model = await tf.loadLayersModel('/model/model.json');
 
-        this.model.compile({ optimizer: 'sgd', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
-        this.isReady = true;
+            // Load Metadata (Vocab, Tags, Responses)
+            const metadataRes = await fetch('/model/metadata.json');
+            const metadata = await metadataRes.json();
+            this.vocab = metadata.vocab;
+            this.tags = metadata.tags;
+            this.responses = metadata.responses || {};
+
+            this.isReady = true;
+            console.log("Chatbot model loaded successfully.");
+        } catch (error) {
+            console.error("Failed to load chatbot model:", error);
+        }
     }
 
-    encode(text: string): tf.Tensor2D {
-        const tokens = text.toLowerCase().split(/\s+/);
-        const vector = VOCAB.map(word => tokens.some(t => t.includes(word)) ? 1 : 0);
-        return tf.tensor2d([vector]);
+    tokenize(text: string): string[] {
+        return text.toLowerCase()
+            .replace(/[^\w\s]/gi, '') // Remove punctuation
+            .split(/\s+/)             // Split by whitespace
+            .filter(w => w.length > 0); // Remove empty strings
+    }
+
+    bow(text: string): number[] {
+        const tokens = this.tokenize(text);
+        return this.vocab.map(w => tokens.includes(w) ? 1 : 0);
     }
 
     async classify(text: string): Promise<string> {
         if (!this.isReady) await this.init();
-        if (!this.model) return "unknown";
+        if (!this.model || !this.isReady) return "general";
 
-        const input = this.encode(text);
-        const prediction = this.model.predict(input) as tf.Tensor;
-        const index = (await prediction.argMax(1).data())[0];
+        const inputVector = this.bow(text);
+        const inputTensor = tf.tensor2d([inputVector]);
+        const prediction = this.model.predict(inputTensor) as tf.Tensor;
+        const data = await prediction.data();
 
-        if (text.includes('cramp') || text.includes('pain')) return 'pain_relief';
-        if (text.includes('mood') || text.includes('sad')) return 'emotional_support';
-        if (text.includes('food') || text.includes('eat')) return 'nutrition';
+        // Find index of max value
+        const dataArray = Array.from(data);
+        const maxIndex = dataArray.indexOf(Math.max(...dataArray));
+        const confidence = dataArray[maxIndex];
 
-        return INTENTS[index] || "general";
+        // Threshold for fallback
+        // Lower threshold slightly for broader matching
+        if (confidence < 0.5) return "general";
+
+        return this.tags[maxIndex] || "general";
     }
 
-    private lastResponse: string = "";
-
-    getResponse(intent: string): string {
-        const responses: Record<string, string[]> = {
-            pain_relief: [
-                "I'm sorry you're hurting. Try a warm compress and gentle stretches.",
-                "Magnesium supplements or dark chocolate might help with the cramps.",
-                "Rest is important. Have you tried drinking chamomile tea?"
-            ],
-            emotional_support: [
-                "It's completely normal to feel this way. Be kind to yourself.",
-                "Your hormones are shifting right now. Take it easy today.",
-                "Sending you a virtual hug! Maybe watch your favorite comfort movie?"
-            ],
-            nutrition: [
-                "Focus on iron-rich foods like spinach and lean proteins.",
-                "Stay hydrated! Water helps with bloating and headaches.",
-                "Avoid too much caffeine/salt today if you can."
-            ],
-            general: [
-                "I'm here to listen. Tell me more about how you're feeling.",
-                "Could you describe your symptoms in more detail?",
-                "I'm Luna, your cycle assistant."
-            ]
-        };
-
-        const options = responses[intent] || responses['general'];
+    getResponse(intent: string, text: string = ""): string {
+        const options = this.responses[intent] || this.responses['general'] || ["I'm not sure I understood."];
         let availableOptions = options.filter(r => r !== this.lastResponse);
+
+        // Smart Filtering for Cravings
+        if (intent === 'cravings' && text) {
+            const lowerText = text.toLowerCase();
+            if (lowerText.includes('salt') || lowerText.includes('chip') || lowerText.includes('fries') || lowerText.includes('savory')) {
+                // Return salty options
+                const saltyOptions = availableOptions.filter(r => r.includes('salty') || r.includes('salt') || r.includes('electrolytes'));
+                if (saltyOptions.length > 0) availableOptions = saltyOptions;
+            } else if (lowerText.includes('chocolate') || lowerText.includes('sugar') || lowerText.includes('sweet') || lowerText.includes('candy')) {
+                // Return sweet options
+                const sweetOptions = availableOptions.filter(r => r.includes('chocolate') || r.includes('treat') || r.includes('sweet'));
+                if (sweetOptions.length > 0) availableOptions = sweetOptions;
+            }
+        }
+
         if (availableOptions.length === 0) availableOptions = options;
 
-        const response = availableOptions[Math.floor(Math.random() * availableOptions.length)];
+        let response = availableOptions[Math.floor(Math.random() * availableOptions.length)];
         this.lastResponse = response;
+
+        // --- EMPATHY LAYER ---
+        if (isEmotional(text)) {
+            response = addEmpathy(response);
+        }
+
         return response;
     }
 }

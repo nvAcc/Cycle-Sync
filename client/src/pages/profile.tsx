@@ -2,14 +2,43 @@ import Layout from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Shield, Bell, CloudOff, Download, Trash2, ChevronRight, FileText, LogOut } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Shield, Bell, Download, Trash2, ChevronRight, FileText, LogOut } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
+import { useState, useEffect } from "react";
+import { db } from "@/lib/db";
+import { requestNotificationPermission } from "@/lib/notifications";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [privacySettings, setPrivacySettings] = useState({ onDevice: true, analytics: false });
+  const [notifSettings, setNotifSettings] = useState({ period: true, daily: true });
+
+  // Handle PWA Install Prompt
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = () => {
+    if (!deferredPrompt) {
+      toast({ title: "Already Installed", description: "Luna is already installed or running in browser mode." });
+      return;
+    }
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult: any) => {
+      if (choiceResult.outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    });
+  };
 
   const handleLogout = async () => {
     try {
@@ -17,6 +46,42 @@ export default function ProfilePage() {
       toast({ title: "Logged out", description: "See you soon!" });
     } catch (error) {
       toast({ title: "Logout failed", variant: "destructive" });
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const logs = await db.periodLogs.toArray();
+      const exportData = {
+        user: { username: user?.username },
+        logs: logs,
+        exportedAt: new Date().toISOString()
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `luna-data-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ title: "Data Exported", description: "Your data has been downloaded successfully." });
+    } catch (error) {
+      toast({ title: "Export Failed", description: "Could not export data.", variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (confirm("Are you sure? This will delete ALL your cycle logs on this device. This cannot be undone.")) {
+      try {
+        await db.periodLogs.clear();
+        toast({ title: "Data Deleted", description: "All local cycle logs have been removed." });
+      } catch (error) {
+        toast({ title: "Delete Failed", description: "Could not clear data.", variant: "destructive" });
+      }
     }
   };
 
@@ -52,14 +117,19 @@ export default function ProfilePage() {
                   <Label className="text-base">On-Device Processing</Label>
                   <p className="text-xs text-muted-foreground">Keep all AI analysis local on your phone</p>
                 </div>
-                <Switch defaultChecked />
+                <div className="text-xs font-medium bg-green-100 text-green-700 px-2 py-1 rounded-md border border-green-200">
+                  Active
+                </div>
               </div>
               <div className="p-4 flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="text-base">Anonymous Analytics</Label>
                   <p className="text-xs text-muted-foreground">Share usage data to help improve Luna</p>
                 </div>
-                <Switch />
+                <Switch
+                  checked={privacySettings.analytics}
+                  onCheckedChange={(c) => setPrivacySettings(p => ({ ...p, analytics: c }))}
+                />
               </div>
             </CardContent>
           </Card>
@@ -77,14 +147,38 @@ export default function ProfilePage() {
                   <Label className="text-base">Period Reminders</Label>
                   <p className="text-xs text-muted-foreground">Get notified 2 days before start</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch
+                  checked={notifSettings.period}
+                  onCheckedChange={async (c) => {
+                    if (c) {
+                      const granted = await requestNotificationPermission();
+                      if (!granted) {
+                        toast({ title: "Permission Denied", description: "Please enable notifications in your browser settings.", variant: "destructive" });
+                        return;
+                      }
+                    }
+                    setNotifSettings(n => ({ ...n, period: c }));
+                  }}
+                />
               </div>
               <div className="p-4 flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="text-base">Daily Check-in</Label>
                   <p className="text-xs text-muted-foreground">Reminders to log your symptoms</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch
+                  checked={notifSettings.daily}
+                  onCheckedChange={async (c) => {
+                    if (c) {
+                      const granted = await requestNotificationPermission();
+                      if (!granted) {
+                        toast({ title: "Permission Denied", description: "Enable notifications to get daily reminders.", variant: "destructive" });
+                        return;
+                      }
+                    }
+                    setNotifSettings(n => ({ ...n, daily: c }));
+                  }}
+                />
               </div>
             </CardContent>
           </Card>
@@ -92,7 +186,11 @@ export default function ProfilePage() {
 
         {/* app settings */}
         <div className="space-y-3">
-          <Button variant="outline" className="w-full justify-between h-12 rounded-xl border-muted bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary-foreground">
+          <Button
+            onClick={handleInstall}
+            variant="outline"
+            className="w-full justify-between h-12 rounded-xl border-muted bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary-foreground"
+          >
             <span className="flex items-center gap-2 text-primary"><Download className="w-4 h-4" /> Install App</span>
             <ChevronRight className="w-4 h-4 text-primary/50" />
           </Button>
@@ -100,18 +198,18 @@ export default function ProfilePage() {
 
         {/* data actions */}
         <div className="space-y-3">
-          <Link href="/doctor-report">
+          <Link href="/reports">
             <Button variant="outline" className="w-full justify-between h-12 rounded-xl border-muted mb-3">
               <span className="flex items-center gap-2"><FileText className="w-4 h-4" /> Medical Report</span>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </Button>
           </Link>
 
-          <Button variant="outline" className="w-full justify-between h-12 rounded-xl border-muted">
+          <Button onClick={handleExport} variant="outline" className="w-full justify-between h-12 rounded-xl border-muted">
             <span className="flex items-center gap-2"><Download className="w-4 h-4" /> Export My Data</span>
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </Button>
-          <Button variant="outline" className="w-full justify-between h-12 rounded-xl border-muted text-destructive hover:text-destructive hover:bg-destructive/5">
+          <Button onClick={handleDelete} variant="outline" className="w-full justify-between h-12 rounded-xl border-muted text-destructive hover:text-destructive hover:bg-destructive/5">
             <span className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> Delete All Data</span>
           </Button>
 

@@ -70,7 +70,6 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  //set up all other routes to prevent clashing from catch all route
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {

@@ -4,7 +4,6 @@ import * as schema from "@shared/schema";
 
 const { Pool } = pg;
 
-//PWA mode:allow running without real DB for local first experience
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgres://user:pass@localhost:5432/db"
 });

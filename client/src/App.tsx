@@ -12,7 +12,8 @@ import ProfilePage from "@/pages/profile";
 import LoginPage from "@/pages/login";
 import CommunityPage from "@/pages/community";
 import ThreadPage from "@/pages/thread";
-import DoctorReportPage from "@/pages/doctor-report";
+import ReportsPage from "@/pages/reports";
+import HistoryPage from "@/pages/history";
 import { useEffect } from "react";
 
 function ProtectedRoute({ component: Component, ...rest }: any) {
@@ -48,7 +49,8 @@ function Router() {
       <Route path="/community/thread/:id" component={(props) => <ProtectedRoute component={ThreadPage} {...props} />} />
       <Route path="/chat" component={(props) => <ProtectedRoute component={ChatPage} {...props} />} />
       <Route path="/profile" component={(props) => <ProtectedRoute component={ProfilePage} {...props} />} />
-      <Route path="/doctor-report" component={(props) => <ProtectedRoute component={DoctorReportPage} {...props} />} />
+      <Route path="/history" component={(props) => <ProtectedRoute component={HistoryPage} {...props} />} />
+      <Route path="/reports" component={(props) => <ProtectedRoute component={ReportsPage} {...props} />} />
       <Route component={NotFound} />
     </Switch>
   );

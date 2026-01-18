@@ -15,20 +15,33 @@ type Message = {
   content: string;
 };
 
+import { useAuth } from "@/lib/auth";
+
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: "Hi Sarah! I'm Luna. How are you feeling today? I can help with symptom relief or answer questions about your cycle.",
-    },
-  ]);
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    if (user && messages.length === 0) {
+      setMessages([
+        {
+          id: "1",
+          role: "assistant",
+          content: `Hi ${user.username}! I'm Luna. How are you feeling today? I can help with symptom relief or answer questions about your cycle.`,
+        },
+      ]);
+    }
+  }, [user]);
+
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    // Only auto-scroll if we have more than the initial greeting or if typing
+    // This solves the issue of loading "from the bottom"
+    if ((messages.length > 1 || isTyping) && scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isTyping]);
@@ -44,16 +57,22 @@ export default function ChatPage() {
     // AI response using client side TF.js model
     try {
       const intent = await chatbot.classify(text);
-      const response = chatbot.getResponse(intent);
+      const response = chatbot.getResponse(intent, text);
 
+      const botMessage: Message = {
+        id: (Date.now() + 1).toString(), // Ensure unique ID
+        role: "assistant", // Keeping "assistant" as per Message type
+        content: response,
+      };
+
+      // Simulate small delay for realism
       setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          { id: (Date.now() + 1).toString(), role: "assistant", content: response },
-        ]);
+        setMessages((prev) => [...prev, botMessage]);
         setIsTyping(false);
-      }, 800);
-    } catch (e) {
+      }, 600);
+
+    } catch (error) {
+      console.error("Error getting chatbot response:", error);
       setIsTyping(false);
     }
   };
