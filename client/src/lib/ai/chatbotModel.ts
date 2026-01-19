@@ -12,10 +12,8 @@ export class ChatbotModel {
 
     async init() {
         try {
-            // Load Model
             this.model = await tf.loadLayersModel('/model/model.json');
 
-            // Load Metadata (Vocab, Tags, Responses)
             const metadataRes = await fetch('/model/metadata.json');
             const metadata = await metadataRes.json();
             this.vocab = metadata.vocab;
@@ -31,9 +29,9 @@ export class ChatbotModel {
 
     tokenize(text: string): string[] {
         return text.toLowerCase()
-            .replace(/[^\w\s]/gi, '') // Remove punctuation
-            .split(/\s+/)             // Split by whitespace
-            .filter(w => w.length > 0); // Remove empty strings
+            .replace(/[^\w\s]/gi, '')
+            .split(/\s+/)
+            .filter(w => w.length > 0);
     }
 
     bow(text: string): number[] {
@@ -43,6 +41,45 @@ export class ChatbotModel {
 
     async classify(text: string): Promise<string> {
         if (!this.isReady) await this.init();
+
+        const lowerText = text.toLowerCase();
+
+        const rules: Record<string, string> = {
+            "mood swings": "faq_532",
+            "improve mood": "faq_532",
+            "fix mood": "faq_532",
+            "mood": "faq_531",
+            "cramp": "pain_relief",
+            "pain": "pain_relief",
+            "bloating": "bloating",
+            "bloated": "bloating",
+            "acne": "acne",
+            "pimple": "acne",
+            "sad": "sadness",
+            "depressed": "sadness",
+            "cry": "sadness",
+            "anxiety": "anxiety",
+            "anxious": "anxiety",
+            "stress": "anxiety",
+            "nervous": "anxiety",
+            "happy": "happy",
+            "good": "happy",
+            "great": "happy",
+            "tired": "fatigue",
+            "fatigue": "fatigue",
+            "exhausted": "fatigue",
+            "craving": "cravings",
+            "hungry": "cravings",
+            "eat": "cravings"
+        };
+
+        for (const [key, intent] of Object.entries(rules)) {
+            if (lowerText.includes(key)) {
+                console.log(`[Chatbot] Rule matched: "${key}" -> ${intent}`);
+                return intent;
+            }
+        }
+
         if (!this.model || !this.isReady) return "general";
 
         const inputVector = this.bow(text);
@@ -50,31 +87,30 @@ export class ChatbotModel {
         const prediction = this.model.predict(inputTensor) as tf.Tensor;
         const data = await prediction.data();
 
-        // Find index of max value
         const dataArray = Array.from(data);
         const maxIndex = dataArray.indexOf(Math.max(...dataArray));
         const confidence = dataArray[maxIndex];
 
-        // Threshold for fallback
-        // Lower threshold slightly for broader matching
+        console.log(`[Chatbot] Model Prediction: index=${maxIndex}, conf=${confidence}, tag=${this.tags[maxIndex]}`);
+
         if (confidence < 0.5) return "general";
 
         return this.tags[maxIndex] || "general";
     }
 
     getResponse(intent: string, text: string = ""): string {
+        console.log(`[Chatbot] Getting response for intent: ${intent}`);
+        console.log(`[Chatbot] Available keys: ${Object.keys(this.responses).length}`);
+
         const options = this.responses[intent] || this.responses['general'] || ["I'm not sure I understood."];
         let availableOptions = options.filter(r => r !== this.lastResponse);
 
-        // Smart Filtering for Cravings
         if (intent === 'cravings' && text) {
             const lowerText = text.toLowerCase();
             if (lowerText.includes('salt') || lowerText.includes('chip') || lowerText.includes('fries') || lowerText.includes('savory')) {
-                // Return salty options
                 const saltyOptions = availableOptions.filter(r => r.includes('salty') || r.includes('salt') || r.includes('electrolytes'));
                 if (saltyOptions.length > 0) availableOptions = saltyOptions;
             } else if (lowerText.includes('chocolate') || lowerText.includes('sugar') || lowerText.includes('sweet') || lowerText.includes('candy')) {
-                // Return sweet options
                 const sweetOptions = availableOptions.filter(r => r.includes('chocolate') || r.includes('treat') || r.includes('sweet'));
                 if (sweetOptions.length > 0) availableOptions = sweetOptions;
             }
@@ -85,7 +121,6 @@ export class ChatbotModel {
         let response = availableOptions[Math.floor(Math.random() * availableOptions.length)];
         this.lastResponse = response;
 
-        // --- EMPATHY LAYER ---
         if (isEmotional(text)) {
             response = addEmpathy(response);
         }
@@ -93,5 +128,4 @@ export class ChatbotModel {
         return response;
     }
 }
-
 export const chatbot = new ChatbotModel();

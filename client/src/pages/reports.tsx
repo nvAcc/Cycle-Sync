@@ -2,7 +2,7 @@ import Layout from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format, differenceInDays, addDays, subDays, isAfter } from "date-fns";
-import { FileText, Download, Share2, Printer, Activity, ArrowLeft } from "lucide-react";
+import { FileText, Download, Printer, Activity, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
@@ -28,7 +28,6 @@ export default function ReportsPage() {
         const periods: Date[][] = [];
         let currentPeriod: Date[] = [];
 
-        // Group dates into periods
         for (let i = 0; i < sortedLogs.length; i++) {
             const date = new Date(sortedLogs[i].startDate);
             if (currentPeriod.length === 0) {
@@ -46,7 +45,6 @@ export default function ReportsPage() {
         }
         if (currentPeriod.length > 0) periods.push(currentPeriod);
 
-        // Calculate Cycle Lengths
         let totalCycleDays = 0;
         let cycleCount = 0;
         const cycleLengths: number[] = [];
@@ -61,7 +59,7 @@ export default function ReportsPage() {
         }
         const avgCycleLength = cycleCount > 0 ? Math.round(totalCycleDays / cycleCount) : 28;
 
-        // Regularity Check (> 7 days variance)
+        //regularity check (> 7 days variance)
         let regularity = "Regular";
         if (cycleLengths.length >= 2) {
             const variance = Math.max(...cycleLengths) - Math.min(...cycleLengths);
@@ -70,7 +68,7 @@ export default function ReportsPage() {
             regularity = "Insufficient Data";
         }
 
-        // Period Length
+        // period length
         let totalPeriodDays = 0;
         periods.forEach(p => {
             if (p.length > 0) {
@@ -81,11 +79,11 @@ export default function ReportsPage() {
         });
         const avgPeriodLength = periods.length > 0 ? Math.round(totalPeriodDays / periods.length) : 5;
 
-        // Predictions
+        // predictions
         const lastPeriod = periods.length > 0 ? periods[periods.length - 1][0] : new Date();
         const nextPredicted = addDays(lastPeriod, avgCycleLength);
 
-        // Symptom Frequency (Last 90 Days)
+        // symptom frequency (last 90 days)
         const ninetyDaysAgo = subDays(new Date(), 90);
         const symptomMap: Record<string, number> = {};
 
@@ -101,7 +99,7 @@ export default function ReportsPage() {
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count);
 
-        // Medical Alerts
+        //medical alerts
         const alerts: string[] = [];
         if (avgCycleLength < 21) alerts.push("Short Cycle (Polymenorrhea) detected.");
         if (avgCycleLength > 35) alerts.push("Long Cycle (Oligomenorrhea) detected.");
@@ -114,7 +112,7 @@ export default function ReportsPage() {
 
     return (
         <Layout>
-            <div className="flex flex-col pt-8 px-6 space-y-6 pb-20">
+            <div className="flex flex-col pt-8 px-6 space-y-6 pb-20 bg-background min-h-screen">
                 <div className="flex items-center gap-3 print:hidden">
                     <Link href="/profile">
                         <Button variant="ghost" size="icon" className="-ml-2">
@@ -125,18 +123,15 @@ export default function ReportsPage() {
                         <h1 className="text-2xl font-serif text-foreground">Clinical Reports</h1>
                         <p className="text-muted-foreground text-sm">Summary for your healthcare provider.</p>
                     </div>
-                    <Button variant="outline" size="icon" className="rounded-full ml-auto" onClick={() => window.print()}>
-                        <Printer className="w-4 h-4" />
-                    </Button>
                 </div>
 
-                {/* Print Header */}
-                <div className="hidden print:block mb-8">
-                    <h1 className="text-3xl font-serif text-black mb-2">Cycle-Sync Clinical Report</h1>
-                    <p className="text-sm text-gray-500">Generated on {format(new Date(), "PPpp")}</p>
+                <div className="mb-8">
+                    <div className="hidden print:block mb-2">
+                        <h1 className="text-3xl font-serif text-black mb-2">Cycle-Sync Clinical Report</h1>
+                        <p className="text-sm text-[#6b7280]">Generated on {format(new Date(), "PPpp")}</p>
+                    </div>
                 </div>
 
-                {/* summary card */}
                 <Card className="border-border shadow-sm print:shadow-none print:border-black">
                     <CardHeader className="bg-primary/5 border-b border-border/40 pb-4 print:bg-transparent print:border-black">
                         <CardTitle className="text-lg font-medium flex items-center gap-2 print:text-black">
@@ -146,23 +141,22 @@ export default function ReportsPage() {
                     </CardHeader>
                     <CardContent className="pt-6 grid grid-cols-2 gap-6">
                         <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider print:text-gray-600">Avg Length</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider print:text-[#4b5563]">Avg Length</p>
                             <p className="text-2xl font-serif print:text-black">{avgCycleLength} Days</p>
                         </div>
                         <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider print:text-gray-600">Status</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider print:text-[#4b5563]">Status</p>
                             <p className={cn("text-2xl font-serif", regularity === "Irregular" ? "text-destructive print:text-black print:font-bold" : "text-foreground print:text-black")}>
                                 {regularity}
                             </p>
                         </div>
                         <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider print:text-gray-600">Last Period</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider print:text-[#4b5563]">Last Period</p>
                             <p className="text-lg font-medium print:text-black">{format(lastPeriod, "MMM d, yyyy")}</p>
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Clinical Alerts */}
                 <Card className="border-border shadow-sm print:shadow-none print:border-black">
                     <CardHeader className="pb-2 print:border-b print:border-black">
                         <CardTitle className="text-sm font-medium flex items-center gap-2 print:text-black">
@@ -177,7 +171,6 @@ export default function ReportsPage() {
                     </CardContent>
                 </Card>
 
-                {/* Symptom Frequency */}
                 <Card className="border-border shadow-sm print:shadow-none print:border-black">
                     <CardHeader className="pb-3 print:border-b print:border-black">
                         <CardTitle className="text-base font-serif print:text-black">Symptom Summary (Last 90 Days)</CardTitle>
@@ -195,13 +188,9 @@ export default function ReportsPage() {
                     </CardContent>
                 </Card>
 
-                {/* actions */}
-                <div className="grid grid-cols-2 gap-4 pt-4 print:hidden">
+                <div className="pt-4 print:hidden no-print">
                     <Button className="w-full h-12 rounded-xl" variant="outline" onClick={() => window.print()}>
                         <Download className="w-4 h-4 mr-2" /> Print / Save PDF
-                    </Button>
-                    <Button className="w-full h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90">
-                        <Share2 className="w-4 h-4 mr-2" /> Share Securely
                     </Button>
                 </div>
 

@@ -17,6 +17,7 @@ type Message = {
 
 import { useAuth } from "@/lib/auth";
 
+import { ChatBackground3D } from "@/components/chat-background-3d";
 
 export default function ChatPage() {
   const { user } = useAuth();
@@ -39,8 +40,6 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Only auto-scroll if we have more than the initial greeting or if typing
-    // This solves the issue of loading "from the bottom"
     if ((messages.length > 1 || isTyping) && scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
@@ -54,18 +53,16 @@ export default function ChatPage() {
     setInput("");
     setIsTyping(true);
 
-    // AI response using client side TF.js model
     try {
       const intent = await chatbot.classify(text);
       const response = chatbot.getResponse(intent, text);
 
       const botMessage: Message = {
-        id: (Date.now() + 1).toString(), // Ensure unique ID
-        role: "assistant", // Keeping "assistant" as per Message type
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
         content: response,
       };
 
-      // Simulate small delay for realism
       setTimeout(() => {
         setMessages((prev) => [...prev, botMessage]);
         setIsTyping(false);
@@ -79,7 +76,8 @@ export default function ChatPage() {
 
   return (
     <Layout>
-      <div className="flex flex-col h-[calc(100vh-64px)] bg-background">
+      <ChatBackground3D />
+      <div className="flex flex-col h-[calc(100vh-64px)] bg-white/70 backdrop-blur-sm relative z-10">
 
         {/* Header/}
         <div className="px-6 pt-8 pb-4 border-b border-border/40 bg-white/50 backdrop-blur-sm z-10">
@@ -97,7 +95,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Messages */}
+        {/* messages */}
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-6 max-w-2xl mx-auto pb-4">
             {messages.map((msg) => (
@@ -148,7 +146,7 @@ export default function ChatPage() {
         </ScrollArea>
 
         {/* suggestions and input */}
-        <div className="p-4 bg-background border-t border-border/40 space-y-4">
+        <div className="p-4 bg-white/30 backdrop-blur-sm border-t border-border/40 space-y-4">
           {messages.length < 3 && (
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mask-fade-right">
               {CHAT_SUGGESTIONS.map((s) => (
