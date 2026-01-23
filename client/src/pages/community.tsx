@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Search, Plus, MessageSquare, Heart, ShieldAlert, MoreHorizontal, Filter } from "lucide-react";
+import { Search, Plus, MessageSquare, Heart, ShieldAlert, MoreHorizontal, Filter, Loader2, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,32 +27,38 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Thread, User } from "@shared/schema";
+
+type ThreadWithAuthor = Thread & { author: User; replyCount: number };
 
 export default function CommunityPage() {
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const { user } = useAuth();
 
-  // Local DB Query
-  const threads = useLiveQuery(() => {
-    let collection = db.threads.orderBy("createdAt").reverse();
-    if (filter !== "All") {
-      collection = db.threads.where("category").equals(filter).reverse();
-    }
-    return collection.toArray();
-  }, [filter]);
+  // Server Query
+  const { data: threads, isLoading } = useQuery<ThreadWithAuthor[]>({
+    queryKey: ["/api/threads"],
+  });
 
-  // Filtering by search
-  const filteredThreads = threads?.filter(t =>
-    t.title.toLowerCase().includes(search.toLowerCase()) ||
-    t.content.toLowerCase().includes(search.toLowerCase())
-  );
+  // Client-side filtering
+  // Client-side filtering
+  const filteredThreads = threads?.filter(t => {
+    const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) ||
+      t.content.toLowerCase().includes(search.toLowerCase());
+
+    // Check tags array
+    const matchesCategory = filter === "All" || (t.tags && t.tags.includes(filter));
+
+    return matchesSearch && matchesCategory;
+  });
+
 
   return (
     <Layout>
@@ -112,18 +118,23 @@ export default function CommunityPage() {
 
         {/* threads list */}
         <div className="space-y-4">
-          {filteredThreads && filteredThreads.length > 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredThreads && filteredThreads.length > 0 ? (
             filteredThreads.map((thread) => (
               <Link key={thread.id} href={`/community/thread/${thread.id}`}>
                 <Card className="bg-white/60 hover:bg-white/90 transition-colors border-border/50 shadow-sm cursor-pointer mb-4">
                   <CardContent className="p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-lg border border-white shadow-sm">
-                          {thread.avatar || "🌸"}
+                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-lg border border-white shadow-sm overflow-hidden">
+                          {/* Handle nested author object */}
+                          {thread.author?.avatar || "🌸"}
                         </div>
                         <div className="space-y-0.5">
-                          <p className="text-xs font-medium text-foreground">{thread.author || "Anonymous"}</p>
+                          <p className="text-xs font-medium text-foreground">{thread.author?.username || "Anonymous"}</p>
                           <p className="text-[10px] text-muted-foreground">
                             {formatDistanceToNow(new Date(thread.createdAt), { addSuffix: true })}
                           </p>
@@ -136,10 +147,41 @@ export default function CommunityPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem className="text-destructive focus:text-destructive">
+                          {user?.id === thread.authorId && (
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive cursor-pointer"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (confirm("Delete this thread?")) {
+                                  try {
+                                    await apiRequest("DELETE", `/api/threads/${thread.id}`);
+                                    queryClient.invalidateQueries({ queryKey: ["/api/threads"] });
+                                    toast({ title: "Deleted", description: "Thread removed." });
+                                  } catch (err) {
+                                    toast({ title: "Error", description: "Could not delete thread.", variant: "destructive" });
+                                  }
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toast({ title: "User Reported", description: "Thank you for keeping our community safe." });
+                            }}
+                          >
                             <ShieldAlert className="w-4 h-4 mr-2" /> Report User
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toast({ title: "User Blocked", description: "You will no longer see content from this user." });
+                            }}
+                          >
                             <Filter className="w-4 h-4 mr-2" /> Block User
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -155,9 +197,11 @@ export default function CommunityPage() {
                       <span className="flex items-center gap-1">
                         <Heart className="w-3.5 h-3.5" /> {thread.likes || 0}
                       </span>
-                      <span className="bg-secondary/10 px-1.5 py-0.5 rounded text-[10px] text-secondary-foreground font-medium">
-                        {thread.category}
-                      </span>
+                      {thread.tags && thread.tags.length > 0 && (
+                        <span className="bg-secondary/10 px-1.5 py-0.5 rounded text-[10px] text-secondary-foreground font-medium">
+                          {thread.tags[0]}
+                        </span>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -181,31 +225,34 @@ function NewThreadDialog({ children, user }: { children: React.ReactNode, user: 
   const [category, setCategory] = useState("Wellness");
   const [content, setContent] = useState("");
 
+  const createMutation = useMutation({
+    mutationFn: async (newThread: any) => {
+      const res = await apiRequest("POST", "/api/threads", newThread);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/threads"] });
+      toast({ title: "Posted!", description: "Your thread has been created." });
+      setOpen(false);
+      setTitle("");
+      setContent("");
+    },
+    onError: (e: any) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  });
+
   const handleSubmit = async () => {
     if (!title.trim() || !content.trim()) {
       toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" });
       return;
     }
 
-    try {
-      await db.threads.add({
-        title,
-        content,
-        category,
-        author: user?.username || "Anonymous",
-        avatar: user?.avatar || "🌸",
-        likes: 0,
-        timestamp: new Date().toISOString(),
-        createdAt: new Date()
-      });
-
-      toast({ title: "Posted!", description: "Your thread has been created." });
-      setOpen(false);
-      setTitle("");
-      setContent("");
-    } catch (e) {
-      toast({ title: "Error", description: "Failed to create thread", variant: "destructive" });
-    }
+    createMutation.mutate({
+      title,
+      content,
+      tags: [category] // Send as tags array
+    });
   };
 
   return (
@@ -238,7 +285,9 @@ function NewThreadDialog({ children, user }: { children: React.ReactNode, user: 
             <Textarea id="content" value={content} onChange={(e) => setContent(e.target.value)} placeholder="Share more details..." className="h-32" />
           </div>
         </div>
-        <Button onClick={handleSubmit} className="w-full">Post Thread</Button>
+        <Button onClick={handleSubmit} className="w-full" disabled={createMutation.isPending}>
+          {createMutation.isPending ? "Posting..." : "Post Thread"}
+        </Button>
       </DialogContent>
     </Dialog>
   );

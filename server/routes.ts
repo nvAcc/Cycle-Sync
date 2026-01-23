@@ -48,9 +48,13 @@ export async function registerRoutes(
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        let user = await storage.getUserByUsername(username);
+        if (!user) {
+          user = await storage.getUserByEmail(username);
+        }
+
         if (!user || user.password !== password) {
-          return done(null, false, { message: "Invalid username or password" });
+          return done(null, false, { message: "Invalid username/email or password" });
         }
         return done(null, user);
       } catch (error) {
@@ -83,19 +87,24 @@ export async function registerRoutes(
   //auth routes
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { username, password } = insertUserSchema.parse(req.body);
+      const { username, password, email } = insertUserSchema.parse(req.body);
 
-      const existing = await storage.getUserByUsername(username);
-      if (existing) {
+      const existingUsername = await storage.getUserByUsername(username);
+      if (existingUsername) {
         return res.status(400).json({ error: "Username already exists" });
       }
 
-      const user = await storage.createUser({ username, password });
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) {
+        return res.status(400).json({ error: "Email already exists" });
+      }
+
+      const user = await storage.createUser({ username, password, email });
       req.login(user, (err) => {
         if (err) {
           return res.status(500).json({ error: "Login failed after registration" });
         }
-        res.json({ user: { id: user.id, username: user.username, avatar: user.avatar } });
+        res.json({ user: { id: user.id, username: user.username, email: user.email, avatar: user.avatar } });
       });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -237,6 +246,27 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       await storage.likeThread(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/threads/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const user = req.user as any;
+      const thread = await storage.getThread(id);
+
+      if (!thread) {
+        return res.status(404).json({ error: "Thread not found" });
+      }
+
+      if (thread.authorId !== user.id) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await storage.deleteThread(id);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

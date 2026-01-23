@@ -18,6 +18,7 @@ import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
   getPeriodLogs(userId: string, startDate?: Date, endDate?: Date): Promise<PeriodLog[]>;
@@ -28,6 +29,7 @@ export interface IStorage {
   getThreads(limit?: number): Promise<Array<Thread & { author: User; replyCount: number }>>;
   getThread(id: string): Promise<(Thread & { author: User }) | undefined>;
   createThread(thread: InsertThread): Promise<Thread>;
+  deleteThread(id: string): Promise<void>;
 
   getComments(threadId: string): Promise<Array<Comment & { author: User }>>;
   createComment(comment: InsertComment): Promise<Comment>;
@@ -44,6 +46,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || undefined;
   }
 
@@ -154,6 +161,11 @@ export class DatabaseStorage implements IStorage {
       author: r.author!,
     }));
   }
+
+  async deleteThread(id: string): Promise<void> {
+    await db.delete(threads).where(eq(threads.id, id));
+  }
+
 
   async createComment(comment: InsertComment): Promise<Comment> {
     const [newComment] = await db

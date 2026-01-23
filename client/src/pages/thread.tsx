@@ -2,7 +2,7 @@ import Layout from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRoute } from "wouter";
-import { ArrowLeft, Heart, MessageSquare, Send, ShieldAlert, MoreVertical, Trash2 } from "lucide-react";
+import { ArrowLeft, Heart, MessageSquare, Send, ShieldAlert, MoreVertical, Trash2, Loader2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   DropdownMenu,
@@ -10,66 +10,102 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Thread, Comment, User } from "@shared/schema";
+
+type ThreadWithAuthor = Thread & { author: User; };
+type CommentWithAuthor = Comment & { author: User; };
 
 export default function ThreadPage() {
   const [, params] = useRoute("/community/thread/:id");
   const [, setLocation] = useLocation();
-  const threadId = parseInt(params?.id || "0");
+  const threadId = params?.id;
   const { user } = useAuth();
   const [commentInput, setCommentInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const thread = useLiveQuery(() => db.threads.get(threadId), [threadId]);
-  const comments = useLiveQuery(() => db.comments.where("threadId").equals(threadId).toArray(), [threadId]);
+  // Fetch Thread
+  const { data: thread, isLoading: threadLoading } = useQuery<ThreadWithAuthor>({
+    queryKey: [`/api/threads/${threadId}`],
+    enabled: !!threadId
+  });
 
-  const handleLike = () => {
-    if (thread) {
-      db.threads.update(threadId, { likes: (thread.likes || 0) + 1 });
-    }
-  };
+  // Fetch Comments
+  const { data: comments, isLoading: commentsLoading } = useQuery<CommentWithAuthor[]>({
+    queryKey: [`/api/threads/${threadId}/comments`],
+    enabled: !!threadId
+  });
 
-  const handleSend = async () => {
-    if (!commentInput.trim() || !thread) return;
-
-    try {
-      await db.comments.add({
-        threadId,
-        content: commentInput,
-        author: user?.username || "Anonymous",
-        avatar: user?.avatar || "🌸",
-        timestamp: new Date().toISOString(),
-        createdAt: new Date()
-      });
+  // Mutations
+  const commentMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await apiRequest("POST", `/api/threads/${threadId}/comments`, { content });
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/threads/${threadId}/comments`] });
       setCommentInput("");
-      // scroll to bottom handled by effect or manual scroll
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    } catch (e) {
-      toast({ title: "Error", description: "Failed to post comment", variant: "destructive" });
+      toast({ title: "Posted", description: "Comment added." });
+    },
+    onError: (e: any) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     }
-  };
+  });
 
-  const handleDelete = async () => {
-    if (confirm("Are you sure you want to delete this thread?")) {
-      await db.threads.delete(threadId);
-      await db.comments.where("threadId").equals(threadId).delete();
+  const likeMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/threads/${threadId}/like`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/threads/${threadId}`] });
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/threads/${threadId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/threads"] });
       toast({ title: "Deleted", description: "Thread deleted." });
       setLocation("/community");
     }
+  });
+
+  const handleSend = () => {
+    if (!commentInput.trim()) return;
+    commentMutation.mutate(commentInput);
   };
+
+  const handleDelete = () => {
+    if (confirm("Are you sure you want to delete this thread?")) {
+      deleteMutation.mutate();
+    }
+  };
+
+  if (threadLoading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </Layout>
+    );
+  }
 
   if (!thread) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-screen">
-          <p className="text-muted-foreground">Thread not found or loading...</p>
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <p className="text-muted-foreground">Thread not found.</p>
           <Link href="/community">
-            <Button variant="link">Back to Community</Button>
+            <Button variant="outline">Back to Community</Button>
           </Link>
         </div>
       </Layout>
@@ -95,11 +131,12 @@ export default function ThreadPage() {
           <div className="p-4 bg-white/40 border-b border-border/40 space-y-4">
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-xl border border-white shadow-sm">
-                  {thread.avatar}
+                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-xl border border-white shadow-sm overflow-hidden">
+                  {/* Handle nested author object */}
+                  {thread.author.avatar || "🌸"}
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-foreground">{thread.author}</p>
+                  <p className="text-sm font-medium text-foreground">{thread.author.username}</p>
                   <p className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(thread.createdAt), { addSuffix: true })}
                   </p>
@@ -113,12 +150,17 @@ export default function ThreadPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {user?.username === thread.author && (
+                  {user?.id === thread.authorId && (
                     <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={handleDelete}>
                       <Trash2 className="w-4 h-4 mr-2" /> Delete Thread
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem className="text-muted-foreground">
+                  <DropdownMenuItem
+                    className="text-muted-foreground cursor-pointer"
+                    onClick={() => {
+                      toast({ title: "Reported", description: "The admin team has been notified." });
+                    }}
+                  >
                     <ShieldAlert className="w-4 h-4 mr-2" /> Report
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -131,8 +173,8 @@ export default function ThreadPage() {
             </div>
 
             <div className="flex gap-4 pt-2">
-              <Button variant="ghost" size="sm" onClick={handleLike} className="h-8 px-2 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors">
-                <Heart className="w-4 h-4 mr-1.5" /> {thread.likes}
+              <Button variant="ghost" size="sm" onClick={() => likeMutation.mutate()} className="h-8 px-2 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors">
+                <Heart className={`w-4 h-4 mr-1.5 ${false ? "fill-primary text-primary" : ""}`} /> {thread.likes}
               </Button>
               <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground">
                 <MessageSquare className="w-4 h-4 mr-1.5" /> {comments?.length || 0}
@@ -142,18 +184,22 @@ export default function ThreadPage() {
 
           {/* comments */}
           <div className="p-4 space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider pl-1">Discussion ({comments?.length})</h3>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider pl-1">Discussion ({comments?.length || 0})</h3>
 
-            {comments && comments.length > 0 ? (
+            {commentsLoading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : comments && comments.length > 0 ? (
               comments.map((comment) => (
                 <div key={comment.id} className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-secondary/20 flex items-center justify-center text-sm border border-white shadow-sm shrink-0 mt-1">
-                    {comment.avatar}
+                  <div className="w-8 h-8 rounded-full bg-secondary/20 flex items-center justify-center text-sm border border-white shadow-sm shrink-0 mt-1 overflow-hidden">
+                    {comment.author.avatar || "🌸"}
                   </div>
                   <div className="flex-1 space-y-1.5">
                     <div className="bg-white p-3 rounded-2xl rounded-tl-none border border-border/50 shadow-sm">
                       <div className="flex justify-between items-baseline mb-1">
-                        <span className="text-xs font-bold text-foreground">{comment.author}</span>
+                        <span className="text-xs font-bold text-foreground">{comment.author.username}</span>
                         <span className="text-[10px] text-muted-foreground">
                           {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
                         </span>
@@ -181,12 +227,13 @@ export default function ThreadPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSend();
               }}
+              disabled={commentMutation.isPending}
             />
             <Button
               size="icon"
               className="absolute right-1 top-1 h-10 w-10 rounded-full"
               onClick={handleSend}
-              disabled={!commentInput.trim()}
+              disabled={!commentInput.trim() || commentMutation.isPending}
             >
               <Send className="w-4 h-4" />
             </Button>

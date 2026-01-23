@@ -7,23 +7,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion } from "framer-motion";
 const bgImage = "/assets/images/soft_fluid_gradient_background_with_coral_and_sage_tones.png";
 import { ShieldCheck } from "lucide-react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
-  const { login, register } = useAuth();
+  const { loginMutation, registerMutation } = useAuth();
+  const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState({ username: "", password: "" });
-  const [registerData, setRegisterData] = useState({ username: "", password: "", confirmPassword: "" });
+  const [registerData, setRegisterData] = useState({ username: "", password: "", confirmPassword: "", email: "" });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await login(loginData.username, loginData.password);
-      toast({ title: "Welcome back!", description: "You've successfully logged in." });
+      await loginMutation.mutateAsync(loginData);
+      setLocation("/");
     } catch (error: any) {
-      toast({ title: "Login failed", description: error.message, variant: "destructive" });
+      // Toast is handled by mutation onError
     } finally {
       setIsLoading(false);
     }
@@ -37,10 +39,14 @@ export default function LoginPage() {
     }
     setIsLoading(true);
     try {
-      await register(registerData.username, registerData.password);
-      toast({ title: "Account created!", description: "Welcome to Luna." });
+      await registerMutation.mutateAsync({
+        username: registerData.username,
+        password: registerData.password,
+        email: registerData.email
+      });
+      setLocation("/");
     } catch (error: any) {
-      toast({ title: "Registration failed", description: error.message, variant: "destructive" });
+      // Toast is handled by mutation onError
     } finally {
       setIsLoading(false);
     }
@@ -81,10 +87,10 @@ export default function LoginPage() {
               <CardContent>
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="login-username">Username</Label>
+                    <Label htmlFor="login-username">Username or Email</Label>
                     <Input
                       id="login-username"
-                      placeholder="sarah_m"
+                      placeholder="sarah@example.com"
                       value={loginData.username}
                       onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
                       className="bg-white/50 border-muted-foreground/20 focus-visible:ring-primary"
@@ -115,6 +121,19 @@ export default function LoginPage() {
             <TabsContent value="register">
               <CardContent>
                 <form onSubmit={handleRegister} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="register-email">Email</Label>
+                    <Input
+                      id="register-email"
+                      type="email"
+                      placeholder="sarah@example.com"
+                      value={registerData.email}
+                      onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                      className="bg-white/50 border-muted-foreground/20 focus-visible:ring-primary"
+                      required
+                      data-testid="input-register-email"
+                    />
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="register-username">Username</Label>
                     <Input

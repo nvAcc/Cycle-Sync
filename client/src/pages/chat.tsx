@@ -178,6 +178,9 @@ export default function ChatPage() {
               <Send className="w-4 h-4" />
             </Button>
           </div>
+          <p className="text-[10px] text-center text-muted-foreground/60 max-w-xl mx-auto px-4">
+            Disclaimer: AI responses are for informational purposes only and do not constitute medical advice. Please consult a healthcare professional for concerns.
+          </p>
         </div>
 
       </div>

@@ -17,16 +17,16 @@ import HistoryPage from "@/pages/history";
 import { useEffect } from "react";
 
 function ProtectedRoute({ component: Component, ...rest }: any) {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!isLoading && !user) {
       setLocation("/login");
     }
-  }, [user, loading, setLocation]);
+  }, [user, isLoading, setLocation]);
 
-  if (loading) {
+  if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center">
       <div className="animate-pulse text-muted-foreground">Loading...</div>
     </div>;

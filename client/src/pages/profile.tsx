@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { requestNotificationPermission } from "@/lib/notifications";
 
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logoutMutation } = useAuth();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [privacySettings, setPrivacySettings] = useState({ onDevice: true, analytics: false });
   const [notifSettings, setNotifSettings] = useState({ period: true, daily: true });
@@ -42,7 +42,7 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await logoutMutation.mutateAsync();
       toast({ title: "Logged out", description: "See you soon!" });
     } catch (error) {
       toast({ title: "Logout failed", variant: "destructive" });
