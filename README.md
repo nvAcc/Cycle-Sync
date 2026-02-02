@@ -1,6 +1,9 @@
+# DTL Project CSE A2
 # LUNA - AI Powered Menstrual Health Tracker
 
 LUNA is an intelligent menstrual wellness platform built for privacy and precision. It predicts cycles, provides an empathetic AI chatbot for wellness support, and offers a secure community for shared experiences. The project prioritizes on-device privacy and reproducible, testable models.
+
+Team Details: Anvitha Bhat A (nvAcc), Ashika Naik (Ashi305), Apoorva Hemmige Arun (apoorva-h-arun), Apoorva GG (Apoorva-code2005)
 
 ## Key Features
 
